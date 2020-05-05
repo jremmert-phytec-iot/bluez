@@ -1088,6 +1088,25 @@ static void cmd_default_agent(int argc, char *argv[])
 	agent_default(dbus_conn, agent_manager);
 }
 
+#define	DISTANCE_VAL_INVALID	0x7FFF
+
+static struct set_discovery_filter_args {
+	char *transport;
+	char *pattern;
+	dbus_uint16_t rssi;
+	dbus_int16_t pathloss;
+	char **uuids;
+	size_t uuids_len;
+	dbus_bool_t duplicate;
+	dbus_bool_t discoverable;
+	bool set;
+	bool active;
+} filter = {
+	.rssi = DISTANCE_VAL_INVALID,
+	.pathloss = DISTANCE_VAL_INVALID,
+	.set = true,
+};
+
 static void start_discovery_reply(DBusMessage *message, void *user_data)
 {
 	dbus_bool_t enable = GPOINTER_TO_UINT(user_data);
@@ -1236,6 +1255,10 @@ static void set_discovery_filter_setup(DBusMessageIter *iter, void *user_data)
 	if (args->duplicate)
 		dict_append_entry(&dict, "DuplicateData", DBUS_TYPE_BOOLEAN,
 						&args->duplicate);
+
+	if (args->pattern != NULL)
+		g_dbus_dict_append_entry(&dict, "Pattern", DBUS_TYPE_STRING,
+						&args->pattern);
 
 	dbus_message_iter_close_container(iter, &dict);
 }
@@ -1392,6 +1415,19 @@ static void cmd_scan_filter_duplicate_data(int argc, char *argv[])
 	filter.set = false;
 }
 
+static void cmd_scan_filter_pattern(int argc, char *argv[])
+{
+	if (argc < 2 || !strlen(argv[1])) {
+		bt_shell_printf("Pattern: %s\n", filter.pattern);
+		return bt_shell_noninteractive_quit(EXIT_SUCCESS);
+	}
+
+	free(filter.pattern);
+	filter.pattern = strdup(argv[1]);
+
+	filter.set = false;
+}
+
 static void filter_clear_uuids(void)
 {
 	g_strfreev(filter.uuids);
@@ -1420,7 +1456,18 @@ static void filter_clear_duplicate(void)
 	filter.duplicate = false;
 }
 
-static const struct filter_clear {
+static void filter_clear_discoverable(void)
+{
+	filter.discoverable = false;
+}
+
+static void filter_clear_pattern(void)
+{
+	free(filter.pattern);
+	filter.pattern = NULL;
+}
+
+struct clear_entry {
 	const char *name;
 	void (*clear) (void);
 } filter_clear[] = {
@@ -1429,7 +1476,8 @@ static const struct filter_clear {
 	{ "pathloss", filter_clear_pathloss },
 	{ "transport", filter_clear_transport },
 	{ "duplicate-data", filter_clear_duplicate },
-	{}
+	{ "pattern", filter_clear_pattern },	
+{}
 };
 
 static char *filter_clear_generator(const char *text, int state)
@@ -2331,8 +2379,15 @@ static const struct bt_shell_menu scan_menu = {
 				"Set/Get transport filter" },
 	{ "duplicate-data", "[on/off]", cmd_scan_filter_duplicate_data,
 				"Set/Get duplicate data filter",
-				mode_generator },
-	{ "clear", "[uuids/rssi/pathloss/transport/duplicate-data]",
+				NULL },
+	{ "discoverable", "[on/off]", cmd_scan_filter_discoverable,
+				"Set/Get discoverable filter",
+				NULL },
+	{ "pattern", "[value]", cmd_scan_filter_pattern,
+				"Set/Get pattern filter",
+				NULL },	
+	{ "clear",
+	"[uuids/rssi/pathloss/transport/duplicate-data/pattern]",
 				cmd_scan_filter_clear,
 				"Clears discovery filter.",
 				filter_clear_generator },
